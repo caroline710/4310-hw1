@@ -247,7 +247,10 @@
 
         const x = d3.scaleBand().rangeRound([0, width2]).padding(0.1).domain(transformedData.map(d => d.qLegalStatus));
         const y = d3.scaleLinear().rangeRound([height2, 0]);
-        const z = d3.scaleOrdinal().domain(uniqueSpecies).range(d3.schemeTableau10);
+        const customColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075'];
+        const z = d3.scaleOrdinal()
+          .domain(uniqueSpecies)
+          .range(customColors);
 
         const series = stack(transformedData);
         console.log(series)
