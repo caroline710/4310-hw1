@@ -1,0 +1,333 @@
+<html>
+
+<head>
+  <title>INFO 4310 HW #1</title>
+
+  <link href="https://fonts.googleapis.com/css?family=Lato:400,700|Raleway:400,700" rel="stylesheet">
+  <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/styles/default.min.css">
+  <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/highlight.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://d3js.org/topojson.v3.min.js"></script>
+  <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+  <style>
+    .neighborhood {
+      fill: #EEE;
+      stroke: white;
+      stroke-width: 2px;
+    }
+
+    .legendLabels {
+      font-family: Arial, serif;
+      font-size: 12px;
+    }
+
+    .container {
+      display: grid;
+      place-items: center;
+    }
+
+    .container>h3 {
+      text-align: center;
+      font-family: Arial, serif;
+      font-size: 30;
+    }
+
+    .container>h4 {
+      text-align: center;
+      font-family: Arial, serif;
+      font-size: 20;
+    }
+  </style>
+
+</head>
+
+<body>
+  <div class="container larger">
+    <h3> San Francisco's Trees by Size and Legal Status</h3>
+    <svg id="map" height="800" width="1200" style="background: #fff; margin-top:10px">
+    </svg>
+    <h4> Bar Chart of Species Diversity by Legal Status</h4>
+    <svg id="barchart" height="600" width="700" style="background: #fff; margin-top:10px">
+    </svg>
+
+    <script id="mapvisual">
+
+      const svg = d3.select("#map");
+      const width = svg.attr("width");
+      const height = svg.attr("height");
+      const margin = { top: 20, right: 20, bottom: 60, left: 20 };
+      const mapWidth = width - margin.left - margin.right;
+      const mapHeight = height - margin.top - margin.bottom;
+      const map = svg.append("g")
+        .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+      const requestData = async function () {
+
+        const sf = await d3.json("./SF-Neighborhoods.geo.json");
+        console.log(sf);
+
+        var neighborhoods = topojson.feature(sf, sf.objects.SFNeighborhoods);
+
+        var landmarks = [
+          { name: "Painted Ladies", coordinates: [-122.4324, 37.7764] },
+          { name: "Lombard Street", coordinates: [-122.4183, 37.8021] },
+          { name: "Golden Gate Park", coordinates: [-122.4766, 37.7694] },
+          { name: "Mission Dolores Park", coordinates: [-122.4256, 37.7597] }
+        ]
+
+        var projection = d3.geoMercator().fitSize([mapWidth, mapHeight], neighborhoods);
+        var path = d3.geoPath().projection(projection);
+
+        map.selectAll("path.neighborhood").data(neighborhoods.features)
+          .join("path")
+          .attr("class", "neighborhood")
+          .attr("d", path);
+
+        const trees = await d3.csv("./Street_Tree_List-2022-01-30_FILTERED.csv");
+
+        const excludedStatuses = [
+          "DPW Maintained",
+          "Section 806 (d)",
+          "Prune Opt Out",
+          "Planning Code 138.1 required",
+          "Section 143",
+          "Street Tree Maintenance Opt Out"
+        ];
+
+        // filter out certain status trees
+        const filteredTrees = trees.filter(d => !excludedStatuses.includes(d.qLegalStatus));
+
+        filteredTrees.forEach(d => {
+
+          d.Position = projection([d.Longitude, d.Latitude]);
+
+        });
+
+        let legalStatus = [...new Set(filteredTrees.map(d => d.qLegalStatus).filter(d => d !== ""))];
+        console.log(legalStatus);
+
+        // defining a scale for circle sizes based on DBH
+        const dbhScale = d3.scaleSqrt()
+          .domain([0, d3.max(filteredTrees, d => +d.DBH)])
+          .range([1, 12])
+
+        const statusColor = d3.scaleOrdinal().domain(legalStatus)
+          .range(["green", "red", "blue", "#636363", "#ffc107",
+            "#fd7e14"]);
+
+        map.selectAll("circle").data(filteredTrees)
+          .join("circle")
+          .attr("r", d => dbhScale(+d.DBH))
+          .attr("fill", d => statusColor(d.qLegalStatus))
+          .attr("opacity", 0.3)
+          .attr("cx", d => d.Position[0])
+          .attr("cy", d => d.Position[1]);
+
+        map.selectAll(".landmark")
+          .data(landmarks)
+          .enter()
+          .append("circle")
+          .attr("class", "landmark")
+          .attr("cx", d => projection(d.coordinates)[0])
+          .attr("cy", d => projection(d.coordinates)[1])
+          .attr("r", 6)
+          .attr("fill", "black")
+
+        map.selectAll(".landmark-label")
+          .data(landmarks)
+          .enter()
+          .append("text")
+          .attr("class", "landmark-label")
+          .attr("x", d => projection(d.coordinates)[0] + 10)
+          .attr("y", d => projection(d.coordinates)[1])
+          .text(d => d.name)
+          .attr("fill", "black")
+          .style("font-family", "Arial")
+          .style("font-weight", "bold")
+
+        const legendWidth = 300;
+        const legend = svg.append("g")
+          .attr("transform", `translate(${width - legendWidth - margin.right},${height / 3 + 30})`)
+          .style("font-family", "Arial");
+
+        legend.selectAll("legendDots")
+          .data(legalStatus)
+          .enter()
+          .append("circle")
+          .attr("cx", 50)
+          .attr("cy", (d, i) => 5 + i * 15)
+          .attr("r", 4)
+          .attr("fill", d => statusColor(d));
+
+        legend.selectAll("legendLabels")
+          .data(legalStatus)
+          .enter()
+          .append("text")
+          .attr("x", 70)
+          .attr("y", (d, i) => 5 + i * 15)
+          .attr("fill", d => statusColor(d))
+          .text(d => d)
+          .attr("text-anchor", "left")
+          .attr("font-size", 11)
+          .style("alignment-baseline", "middle");
+
+        legend.append("text")
+          .attr("x", 20)
+          .attr("y", -30)
+          .text("Legal Status and Size Guide")
+          .attr("font-size", "16px")
+          .attr("fill", "black")
+          .style("font-weight", "bold");
+
+        legend.append("text")
+          .attr("x", 20)
+          .attr("y", -10)
+          .text("Size indicates relative DBH (Diameter at Breast Height)")
+          .attr("font-size", "12px")
+          .attr("fill", "black");
+
+        // add a stacked bar chart to show tree species diversity by legal status
+        const margin2 = { top: 20, right: 20, bottom: 50, left: 70 };
+        const width2 = 700 - margin2.left - margin2.right;
+        const height2 = 600 - margin2.top - margin2.bottom;
+
+        const svg2 = d3.select("#barchart")
+          .append("svg")
+          .attr("width", width2 + margin2.left + margin2.right)
+          .attr("height", height2 + margin2.top + margin2.bottom)
+          .append("g")
+          .attr("transform",
+            "translate(" + margin2.left + "," + margin2.top + ")");
+
+        const speciesCountByStatus = {};
+        filteredTrees.forEach(tree => {
+          const { qLegalStatus, qSpecies } = tree;
+
+          if (!speciesCountByStatus[qLegalStatus]) {
+            speciesCountByStatus[qLegalStatus] = {};
+          }
+
+          if (!speciesCountByStatus[qLegalStatus][qSpecies]) {
+            speciesCountByStatus[qLegalStatus][qSpecies] = 0;
+          }
+
+          speciesCountByStatus[qLegalStatus][qSpecies] += 1;
+
+        });
+
+        const topSpecies = {};
+        Object.keys(speciesCountByStatus).forEach(status => {
+          const speciesCounts = speciesCountByStatus[status];
+          const sortedSpecies = Object.entries(speciesCounts)
+            .sort((a, b) => b[1] - a[1]) // sort by descending count
+            .slice(0, 5)
+            .reduce((obj, [species, count]) => ({ ...obj, [species]: count }), {});
+          topSpecies[status] = sortedSpecies;
+        });
+
+        const transformedData = Object.keys(topSpecies).filter(qLegalStatus => qLegalStatus)
+          .map(qLegalStatus => {
+            return {
+              qLegalStatus,
+              ...topSpecies[qLegalStatus]
+            };
+          });
+
+        console.log(transformedData)
+
+        const uniqueSpecies = new Set();
+        transformedData.forEach(d => {
+          Object.keys(d).forEach(key => {
+            if (key !== 'qLegalStatus') uniqueSpecies.add(key);
+          });
+        });
+
+        const stack = d3.stack()
+          .keys(Array.from(uniqueSpecies));
+
+        const x = d3.scaleBand().rangeRound([0, width2]).padding(0.1).domain(transformedData.map(d => d.qLegalStatus));
+        const y = d3.scaleLinear().rangeRound([height2, 0]);
+        const z = d3.scaleOrdinal().domain(uniqueSpecies).range(d3.schemeTableau10);
+
+        const series = stack(transformedData);
+        console.log(series)
+
+        const xDomain = transformedData.map(d => d.qLegalStatus).filter(Boolean);
+        x.domain(xDomain);
+        y.domain([0, d3.max(series, d => d3.max(d, d => d[1]))]).nice();
+
+        svg2.append("g")
+          .selectAll("g")
+          .data(series)
+          .enter().append("g")
+          .attr("fill", d => z(d.key))
+          .selectAll("rect")
+          .data(d => d)
+          .enter().append("rect")
+          .attr("x", d => x(d.data.qLegalStatus))
+          .attr("y", d => y(d[1]))
+          .attr("height", d => y(d[0]) - y(d[1]))
+          .attr("width", x.bandwidth());
+
+        svg2.append("g")
+          .attr("transform", `translate(0,${height2})`)
+          .call(d3.axisBottom(x));
+
+        svg2.append("g")
+          .call(d3.axisLeft(y));
+
+        svg2.append("text")
+          .attr("class", "x label")
+          .attr("text-anchor", "end")
+          .attr("x", width2 / 2 + margin2.left)
+          .attr("y", height2 + margin2.bottom - 6)
+          .text("Legal Status")
+          .style("font-family", "Arial")
+          .style("font-weight", "bold");
+
+        svg2.append("text")
+          .attr("class", "y label")
+          .attr("text-anchor", "middle")
+          .attr("y", -margin2.left + 10)
+          .attr("x", -height2 / 2)
+          .attr("dy", ".75em")
+          .attr("transform", "rotate(-90)")
+          .text("Number of Trees")
+          .style("font-family", "Arial")
+          .style("font-weight", "bold");
+
+
+        const legend2 = svg2.selectAll(".legend")
+          .data(Array.from(uniqueSpecies).slice().reverse())
+          .enter().append("g")
+          .attr("class", "legend")
+          .attr("transform", (d, i) => `translate(0,${i * 20})`);
+
+        legend2.append("rect")
+          .attr("x", width2 - 18)
+          .attr("width", 18)
+          .attr("height", 18)
+          .style("fill", z);
+
+        legend2.append("text")
+          .attr("x", width2 - 24)
+          .attr("y", 9)
+          .attr("dy", ".35em")
+          .style("text-anchor", "end")
+          .style("font-family", "Arial")
+          .style("font-style", "italic")
+          .text(d => {
+            const parts = d.split(' :: ');
+            return parts.length > 1 ? parts[1] : parts[0];
+          })
+        console.log(Array.isArray(uniqueSpecies)); // Should log true
+        console.log(uniqueSpecies);
+      }
+      requestData();
+
+
+    </script>
+  </div>
+</body>
+
+</html>
